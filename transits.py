@@ -2,6 +2,9 @@ import ephem
 import math
 from datetime import datetime, timedelta
 
+# ---------------------------
+# Constants
+# ---------------------------
 CELESTIAL_BODIES = {
     "sun": ephem.Sun,
     "moon": ephem.Moon,
@@ -23,6 +26,18 @@ ASPECTS = {
     "sextile": 60
 }
 
+ASPECT_INTERPRETATIONS = {
+    ("Pluto", "Venus", "square"): "This can bring power struggles or intense transformation in relationships and values.",
+    ("Saturn", "Mars", "sextile"): "A strong time for focused energy and disciplined action toward goals.",
+    ("Sun", "Neptune", "sextile"): "Creativity, intuition, and spirituality are heightened. Dream big.",
+    ("Sun", "Pluto", "trine"): "Personal transformation and empowerment flow more easily now.",
+    ("Mercury", "Saturn", "square"): "Tension in communication. Double-check your words and avoid harsh judgment.",
+    # Add more here...
+}
+
+# ---------------------------
+# Core Helper Functions
+# ---------------------------
 def get_longitude(planet, observer):
     body = CELESTIAL_BODIES[planet.lower()]()
     body.compute(observer)
@@ -32,6 +47,9 @@ def angular_distance(a, b):
     diff = abs(a - b) % 360
     return diff if diff <= 180 else 360 - diff
 
+# ---------------------------
+# Transits
+# ---------------------------
 def find_transits(natal_date, check_date, lat, lng, orb=2.0):
     observer_natal = ephem.Observer()
     observer_natal.date = natal_date
@@ -54,7 +72,6 @@ def find_transits(natal_date, check_date, lat, lng, orb=2.0):
     }
 
     transits = []
-
     for t_planet, t_lon in transit_positions.items():
         for n_planet, n_lon in natal_positions.items():
             for aspect_name, exact_angle in ASPECTS.items():
@@ -71,38 +88,24 @@ def find_transits(natal_date, check_date, lat, lng, orb=2.0):
 
     return sorted(transits, key=lambda x: x["orb"])
 
-ASPECT_INTERPRETATIONS = {
-    ("Pluto", "Venus", "square"): "This can bring power struggles or intense transformation in relationships and values.",
-    ("Saturn", "Mars", "sextile"): "A strong time for focused energy and disciplined action toward goals.",
-    ("Sun", "Neptune", "sextile"): "Creativity, intuition, and spirituality are heightened. Dream big.",
-    ("Sun", "Pluto", "trine"): "Personal transformation and empowerment flow more easily now.",
-    ("Mercury", "Saturn", "square"): "Tension in communication. Double-check your words and avoid harsh judgment.",
-    # Add many more here — editable and extendable
-}
-
 def interpret_transit(transit):
     key = (transit["transit_planet"], transit["natal_planet"], transit["aspect"])
     interpretation = ASPECT_INTERPRETATIONS.get(key)
-
     if interpretation:
         return f"{transit['transit_planet']} {transit['aspect']} {transit['natal_planet']} (orb {transit['orb']}°): {interpretation}"
     else:
         return f"{transit['transit_planet']} {transit['aspect']} {transit['natal_planet']} (orb {transit['orb']}°): A meaningful connection is forming."
 
 def get_daily_transit_report(natal_date, date, lat, lng, orb=2.0):
-
     try:
-        # Parse and format ISO dates for ephem
         parsed_date = datetime.fromisoformat(date)
+        parsed_natal = datetime.fromisoformat(natal_date)
         ephem_date = parsed_date.strftime('%Y/%m/%d %H:%M:%S')
-        
-        parsed_natal_date = datetime.fromisoformat(natal_date)
-        ephem_natal_date = parsed_natal_date.strftime('%Y/%m/%d %H:%M:%S')
+        ephem_natal = parsed_natal.strftime('%Y/%m/%d %H:%M:%S')
     except ValueError:
-        return {"error": "Invalid date format. Use ISO 8601 format (YYYY-MM-DDTHH:MM:SS)"}
-    
-    # Run your core transit finder
-    transits = find_transits(ephem_natal_date, ephem_date, lat, lng, orb)
+        return {"error": "Invalid date format. Use YYYY-MM-DDTHH:MM:SS"}
+
+    transits = find_transits(ephem_natal, ephem_date, lat, lng, orb)
     if not transits:
         return f"No major transits detected for {date} within {orb}° orb."
 
@@ -120,3 +123,82 @@ def find_upcoming_transits(natal_date, start_date, lat, lng, days=30, orb=2.0):
             t["date"] = check_date
             upcoming.append(t)
     return sorted(upcoming, key=lambda x: (x["date"], x["orb"]))
+
+# ---------------------------
+# Natal Chart Support
+# ---------------------------
+def get_all_planet_positions(date_str, geo_lat='0.0', geo_lng='0.0'):
+    try:
+        observer = ephem.Observer()
+        observer.date = datetime.fromisoformat(date_str).strftime('%Y/%m/%d %H:%M:%S')
+        observer.lat = str(geo_lat)
+        observer.lon = str(geo_lng)
+
+        positions = {}
+        for planet in CELESTIAL_BODIES:
+            body = CELESTIAL_BODIES[planet]()
+            body.compute(observer)
+            lon = math.degrees(ephem.Ecliptic(body).lon) % 360
+            positions[planet.title()] = round(lon, 2)
+
+        return positions
+    except Exception as e:
+        return {"error": str(e)}
+
+def calculate_aspects(date_str, geo_lat='0.0', geo_lng='0.0'):
+    observer = ephem.Observer()
+    observer.date = datetime.fromisoformat(date_str).strftime('%Y/%m/%d %H:%M:%S')
+    observer.lat = str(geo_lat)
+    observer.lon = str(geo_lng)
+
+    positions = {
+        planet: get_longitude(planet, observer)
+        for planet in CELESTIAL_BODIES
+    }
+
+    aspects = []
+    for i, p1 in enumerate(positions):
+        for j, p2 in enumerate(positions):
+            if j <= i:
+                continue
+            for name, angle in ASPECTS.items():
+                actual_angle = angular_distance(positions[p1], positions[p2])
+                if abs(actual_angle - angle) <= 2.0:
+                    aspects.append({
+                        "planet1": p1.title(),
+                        "planet2": p2.title(),
+                        "aspect": name,
+                        "orb": round(abs(actual_angle - angle), 2)
+                    })
+
+    return aspects
+
+def calculate_houses(date_str, geo_lat='0.0', geo_lng='0.0'):
+    try:
+        observer = ephem.Observer()
+        observer.date = datetime.fromisoformat(date_str).strftime('%Y/%m/%d %H:%M:%S')
+        observer.lat = str(geo_lat)
+        observer.lon = str(geo_lng)
+
+        sidereal_time = observer.sidereal_time()
+        ramc = math.degrees(float(sidereal_time))
+        ascendant = (ramc + 90) % 360  # Rough approximation
+
+        houses = {}
+        for i in range(1, 13):
+            cusp = (ascendant + (i - 1) * 30) % 360
+            houses[str(i)] = round(cusp, 2)
+
+        return houses
+    except Exception as e:
+        return {"error": str(e)}
+
+def get_natal_chart(date_str, geo_lat='0.0', geo_lng='0.0'):
+    return {
+        "date": date_str,
+        "latitude": geo_lat,
+        "longitude": geo_lng,
+        "planets": get_all_planet_positions(date_str, geo_lat, geo_lng),
+        "aspects": calculate_aspects(date_str, geo_lat, geo_lng),
+        "houses": calculate_houses(date_str, geo_lat, geo_lng)
+    }
