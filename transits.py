@@ -90,7 +90,19 @@ def interpret_transit(transit):
         return f"{transit['transit_planet']} {transit['aspect']} {transit['natal_planet']} (orb {transit['orb']}°): A meaningful connection is forming."
 
 def get_daily_transit_report(natal_date, date, lat, lng, orb=2.0):
-    transits = find_transits(natal_date, date, lat, lng, orb)
+
+    try:
+        # Parse and format ISO dates for ephem
+        parsed_date = datetime.fromisoformat(date)
+        ephem_date = parsed_date.strftime('%Y/%m/%d %H:%M:%S')
+        
+        parsed_natal_date = datetime.fromisoformat(natal_date)
+        ephem_natal_date = parsed_natal_date.strftime('%Y/%m/%d %H:%M:%S')
+    except ValueError:
+        return {"error": "Invalid date format. Use ISO 8601 format (YYYY-MM-DDTHH:MM:SS)"}
+    
+    # Run your core transit finder
+    transits = find_transits(ephem_natal_date, ephem_date, lat, lng, orb)
     if not transits:
         return f"No major transits detected for {date} within {orb}° orb."
 
